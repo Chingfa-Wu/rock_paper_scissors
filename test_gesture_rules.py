@@ -2,6 +2,7 @@
 
 import sys
 import types
+from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
@@ -30,7 +31,12 @@ fake_mediapipe = SimpleNamespace(
 sys.modules.setdefault("cv2", types.SimpleNamespace())
 sys.modules.setdefault("mediapipe", fake_mediapipe)
 
-from evaluate_gesture_dataset import empty_confusion_matrix, find_most_confused_pair
+from evaluate_gesture_dataset import (
+    build_per_class_results,
+    empty_confusion_matrix,
+    find_most_confused_pair,
+    render_confusion_matrix_svg,
+)
 from rock_paper_scissors import VALID_CLASSES, detect_gesture
 
 
@@ -82,6 +88,40 @@ class GestureRuleTests(unittest.TestCase):
             find_most_confused_pair(matrix),
             {"actual": "rock", "predicted": "paper", "count": 2},
         )
+
+    def test_per_class_results_include_success_rates(self):
+        labels = [*VALID_CLASSES, "unknown"]
+        matrix = empty_confusion_matrix(labels)
+        matrix["rock"]["rock"] = 2
+        matrix["rock"]["paper"] = 1
+        matrix["paper"]["paper"] = 4
+
+        self.assertEqual(
+            build_per_class_results(matrix),
+            {
+                "rock": {"total": 3, "correct": 2, "success_rate": 2 / 3},
+                "paper": {"total": 4, "correct": 4, "success_rate": 1.0},
+                "scissors": {"total": 0, "correct": 0, "success_rate": None},
+            },
+        )
+
+    def test_confusion_matrix_svg_contains_counts_and_success_rates(self):
+        labels = [*VALID_CLASSES, "unknown"]
+        matrix = empty_confusion_matrix(labels)
+        matrix["rock"]["rock"] = 1
+        matrix["rock"]["unknown"] = 1
+        output_path = Path(__file__).with_name("test_confusion_matrix.svg")
+
+        try:
+            render_confusion_matrix_svg(matrix, labels, output_path)
+            svg = output_path.read_text(encoding="utf-8")
+        finally:
+            if output_path.exists():
+                output_path.unlink()
+
+        self.assertIn("Gesture Confusion Matrix", svg)
+        self.assertIn(">50.0%</text>", svg)
+        self.assertIn(">unknown</text>", svg)
 
 
 if __name__ == "__main__":
