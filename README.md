@@ -83,7 +83,26 @@ camera = cv2.VideoCapture(1)
 
 - `rock`：食指到小拇指皆彎曲。
 - `scissors`：食指與中指伸直。
-- `paper`：至少三根非拇指手指伸直。
+- `paper`：食指到小拇指四根非拇指手指皆伸直。
+
+## 建立資料集與量化測試
+
+建立測試資料夾，並將圖片依照真實手勢放進對應分類：
+
+```text
+dataset/
+├── rock/
+├── paper/
+└── scissors/
+```
+
+建議每一類至少拍攝 30 張以上，並包含不同距離、光線與背景。完成後執行：
+
+```bash
+python evaluate_gesture_dataset.py dataset --output reports/gesture_evaluation.json
+```
+
+輸出會包含整體準確率、每種手勢的準確率、混淆矩陣，以及最容易誤判的手勢組合。若圖片無法讀取、沒有偵測到手，或手勢不符合規則，會記錄為 `unknown`。
 
 ## 疑難排解
 

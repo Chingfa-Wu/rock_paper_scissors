@@ -61,7 +61,7 @@ def detect_gesture(hand_landmarks) -> str | None:
         and finger_status[2] == 1
     ):
         return "scissors"
-    if open_finger_count >= 3:
+    if open_finger_count == 4:
         return "paper"
     return None
 
