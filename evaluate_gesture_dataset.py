@@ -24,17 +24,24 @@ def iter_labeled_images(dataset_dir: Path):
                 yield label, image_path
 
 
-def detect_image_gesture(cv2, detect_gesture, hands, image_path: Path) -> str:
+def detect_image_gesture(
+    cv2,
+    detect_gesture,
+    detect_image_hand_landmarks,
+    landmarker,
+    image_path: Path,
+    model,
+) -> str:
     image = cv2.imread(str(image_path))
     if image is None:
         return UNKNOWN_CLASS
 
     rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    results = hands.process(rgb_image)
-    if not results.multi_hand_landmarks:
+    hand_landmarks = detect_image_hand_landmarks(landmarker, rgb_image)
+    if not hand_landmarks:
         return UNKNOWN_CLASS
 
-    gesture = detect_gesture(results.multi_hand_landmarks[0])
+    gesture = detect_gesture(hand_landmarks, model)
     return gesture or UNKNOWN_CLASS
 
 
@@ -68,23 +75,31 @@ def evaluate_dataset(dataset_dir: Path) -> dict:
         )
 
     import cv2
-    import mediapipe as mp
-
-    from rock_paper_scissors import detect_gesture
+    from rock_paper_scissors import (
+        create_hand_landmarker,
+        detect_gesture,
+        detect_image_hand_landmarks,
+        load_gesture_model,
+    )
 
     labels = [*VALID_CLASSES, UNKNOWN_CLASS]
     matrix = empty_confusion_matrix(labels)
+    model = load_gesture_model()
 
-    mp_hands = mp.solutions.hands
-    with mp_hands.Hands(
-        static_image_mode=True,
-        max_num_hands=1,
-        min_detection_confidence=0.7,
-        min_tracking_confidence=0.7,
-    ) as hands:
+    landmarker = create_hand_landmarker(min_detection_confidence=0.7)
+    try:
         for actual, image_path in labeled_images:
-            predicted = detect_image_gesture(cv2, detect_gesture, hands, image_path)
+            predicted = detect_image_gesture(
+                cv2,
+                detect_gesture,
+                detect_image_hand_landmarks,
+                landmarker,
+                image_path,
+                model,
+            )
             matrix[actual][predicted] += 1
+    finally:
+        landmarker.close()
 
     per_class_results = build_per_class_results(matrix)
     total_images = sum(result["total"] for result in per_class_results.values())

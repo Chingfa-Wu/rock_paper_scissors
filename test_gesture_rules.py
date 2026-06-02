@@ -1,7 +1,5 @@
-"""Tests for gesture rules and evaluation metrics."""
+"""Tests for KNN gesture plumbing and evaluation metrics."""
 
-import sys
-import types
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -21,32 +19,36 @@ class FakeHandLandmark:
     PINKY_PIP = 18
 
 
-fake_hands = SimpleNamespace(HandLandmark=FakeHandLandmark)
-fake_mediapipe = SimpleNamespace(
-    solutions=SimpleNamespace(
-        hands=fake_hands,
-        drawing_utils=SimpleNamespace(),
-    )
-)
-sys.modules.setdefault("cv2", types.SimpleNamespace())
-sys.modules.setdefault("mediapipe", fake_mediapipe)
-
 from evaluate_gesture_dataset import (
     build_per_class_results,
     empty_confusion_matrix,
     find_most_confused_pair,
     render_confusion_matrix_svg,
 )
-from rock_paper_scissors import VALID_CLASSES, detect_gesture
+from rock_paper_scissors import (
+    VALID_CLASSES,
+    detect_gesture,
+    extract_landmark_features,
+)
 
 
-mp_hands = fake_hands
+mp_hands = SimpleNamespace(HandLandmark=FakeHandLandmark)
+
+
+class FakeModel:
+    def __init__(self, prediction: str):
+        self.prediction = prediction
+        self.seen_features = None
+
+    def predict(self, rows):
+        self.seen_features = rows[0]
+        return [self.prediction]
 
 
 def fake_landmarks(open_fingers: set[int]):
-    landmarks = [SimpleNamespace(x=0.0, y=0.0) for _ in range(21)]
+    landmarks = [SimpleNamespace(x=0.0, y=0.0, z=0.0) for _ in range(21)]
     wrist = mp_hands.HandLandmark.WRIST
-    landmarks[wrist] = SimpleNamespace(x=0.0, y=0.0)
+    landmarks[wrist] = SimpleNamespace(x=0.0, y=0.0, z=0.0)
 
     pairs = (
         (mp_hands.HandLandmark.THUMB_TIP, mp_hands.HandLandmark.THUMB_IP),
@@ -56,27 +58,31 @@ def fake_landmarks(open_fingers: set[int]):
         (mp_hands.HandLandmark.PINKY_TIP, mp_hands.HandLandmark.PINKY_PIP),
     )
     for finger_index, (tip, pip) in enumerate(pairs):
-        landmarks[pip] = SimpleNamespace(x=1.0, y=0.0)
+        landmarks[pip] = SimpleNamespace(x=1.0, y=0.0, z=0.0)
         landmarks[tip] = SimpleNamespace(
             x=2.0 if finger_index in open_fingers else 0.5,
             y=0.0,
+            z=0.0,
         )
     return SimpleNamespace(landmark=landmarks)
 
 
-class GestureRuleTests(unittest.TestCase):
-    def test_detects_all_expected_classes(self):
-        cases = {
-            "rock": set(),
-            "scissors": {1, 2},
-            "paper": {1, 2, 3, 4},
-        }
-        for expected, open_fingers in cases.items():
-            with self.subTest(expected=expected):
-                self.assertEqual(detect_gesture(fake_landmarks(open_fingers)), expected)
+class GestureKnnTests(unittest.TestCase):
+    def test_landmarks_become_normalized_knn_features(self):
+        features = extract_landmark_features(fake_landmarks({1, 2}))
 
-    def test_three_open_fingers_is_not_paper(self):
-        self.assertIsNone(detect_gesture(fake_landmarks({1, 2, 3})))
+        self.assertEqual(len(features), 63)
+        self.assertEqual(features[:3], [0.0, 0.0, 0.0])
+        self.assertAlmostEqual(max(abs(value) for value in features), 1.0)
+
+    def test_detect_gesture_uses_model_prediction(self):
+        model = FakeModel("paper")
+
+        self.assertEqual(detect_gesture(fake_landmarks(set()), model), "paper")
+        self.assertEqual(len(model.seen_features), 63)
+
+    def test_detect_gesture_rejects_unknown_model_output(self):
+        self.assertIsNone(detect_gesture(fake_landmarks({1, 2, 3}), FakeModel("lizard")))
 
     def test_confusion_matrix_reports_worst_mistake(self):
         labels = [*VALID_CLASSES, "unknown"]

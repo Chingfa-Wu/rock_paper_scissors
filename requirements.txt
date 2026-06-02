@@ -1,2 +1,4 @@
-mediapipe==0.10.20
+mediapipe==0.10.35
 opencv-contrib-python==4.10.0.84
+scikit-learn==1.5.2
+joblib==1.4.2
